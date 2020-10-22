@@ -23,13 +23,13 @@ from collections import Counter
 # ftp://ftp.ncbi.nih.gov/blast/matrices/
 import nwalign3 as nw
 
-__author__ = "Your Name"
-__copyright__ = "Universite Paris Diderot"
-__credits__ = ["Your Name"]
+__author__ = "Debbah Nagi"
+__copyright__ = "Universite de Paris"
+__credits__ = ["Debbah Nagi"]
 __license__ = "GPL"
 __version__ = "1.0.0"
-__maintainer__ = "Your Name"
-__email__ = "your@email.fr"
+__maintainer__ = "Debbah Nagi"
+__email__ = "debbah.nagi@gmail.com"
 __status__ = "Developpement"
 
 
@@ -68,6 +68,30 @@ def get_arguments():
     parser.add_argument('-o', '-output_file', dest='output_file', type=str,
                         default="OTU.fasta", help="Output file")
     return parser.parse_args()
+
+def read_fasta(amplicon_file, minseqlen):
+    
+    with open(amplicon_file, "r") as fasta:
+        seq = ""
+        for line in fasta:
+            if line.startswith('>'):
+                if len(seq) >= minseqlen:
+                     yield seq
+                seq =""
+
+            else:
+                seq = seq + line[:-1]
+        if len(seq) >= minseqlen:
+            yield seq
+
+def dereplication_fulllength(amplicon_file, minseqlen, mincount):
+	seq_list = []
+	for seq in read_fasta(amplicon_file, minseqlen):
+		seq_list.append(seq)
+
+	for o in Counter(seq_list).most_common():
+		if o[1] > mincount:
+			yield o
 
 #==============================================================
 # Main program
