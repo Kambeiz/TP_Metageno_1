@@ -203,10 +203,10 @@ def chimera_removal(amplicon_file, minseqlen, mincount, chunk_size, kmer_size):
 
     for i, sequence in enumerate(dereplication_fulllength(amplicon_file, minseqlen, mincount)):
         
-        chunk_list = get_chunks(sequence[0], chunk_size)
+        ck_list = get_chunks(sequence[0], chunk_size)
         
         mates_list = []
-        for chunk in chunk_list:
+        for chunk in ck_list:
             mates_list.append(search_mates(kmer_dict, chunk, kmer_size))
 
         common_list = []
@@ -216,11 +216,11 @@ def chimera_removal(amplicon_file, minseqlen, mincount, chunk_size, kmer_size):
 
         if len(common_list) > 1:
             for c in common_list[0:2]:
-                chunk_ref = get_chunks(list_nonchim[c], chunk_size)
+                ck_ref = get_chunks(list_nonchim[c], chunk_size)
                 
                 identity_matrix = [[]*4]
-                for i in range(len(chunk_list)):
-                    align = nw.global_align(chunk_list[i], chunk_ref[i], gap_open=-1, gap_extend=-1, matrix="MATCH")
+                for i in range(len(ck_list)):
+                    align = nw.global_align(ck_list[i], ck_ref[i], gap_open=-1, gap_extend=-1, matrix="MATCH")
                     identity_matrix[i].append(get_identity(align))
 
         if not chimera:
@@ -252,9 +252,6 @@ def write_OTU(otu_list, output_file):
     ---------
     otu_list: list
     output_file: str
-    Format OTU:
-    >OTU_{numéro partant de 1} occurrence:{nombre d’occurrence à la déréplication}
-    {séquence au format fasta}
     """
     with open(output_file, "w") as filout:
         for i, otu in enumerate(otu_list):
