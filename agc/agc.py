@@ -195,67 +195,6 @@ def detect_chimera(perc_identity_matrix):
         return False
 
 
-
-def chimera_removal(amplicon_file, minseqlen, mincount, chunk_size, kmer_size):
-    """
-    Determine which sequences are chimera or not.
-    Parameter
-    ---------
-    amplicon_file: string
-    minseqlen: integer
-    mincount: integer
-    chunk_size: integer
-    kmer_size: integer
-    Return
-    ------
-    generator of non-chimera sequences
-    """
-    seq = []
-    occur = []
-    best_mates = []
-    parents_seq = []
-    chim_id = []
-    seg = []
-    kmer_dic = {}
-    matrix=os.path.abspath(os.path.join(os.path.dirname(__file__), '../agc')) + "/MATCH"
-    derep_gen = dereplication_fulllength(amplicon_file, minseqlen, mincount)
-    
-    for derep in derep_gen:
-        seq.append(derep[0])
-        occur.append(derep[1])
-        
-
-    for i in range(0, len(seq)):
-        seg.append(get_chunks(seq[i], chunk_size))
-        kmer_dic = get_unique_kmer(kmer_dic, seq[i], i, kmer_size)
-
-    for ck_seq in seg:
-        for ck in ck_seq:
-            best_mates.append(search_mates(kmer_dic, ck, kmer_size))
-
-    parents_seq = common(best_mates[0], best_mates[1])
-    ck_seq_list = [get_chunks(seq[parents_seq[0]], chunk_size), 
-                   get_chunks(seq[parents_seq[1]], chunk_size)]
-    
-    for i in range(len(seq)):
-        if not i in parents_seq:
-            chunk_chim = get_chunks(seq[i], chunk_size)
-
-            perc_identity_matrix = [[] for c in range(len(chunk_chim))]
-            for j in range(0, len(ck_seq_list)):
-                for k,chunk in enumerate(chunk_chim):
-                    perc_identity_matrix[k].append(
-                        get_identity(nw.global_align(chunk, ck_seq_list[j][k], 
-                                                     gap_open=-1, 
-                                                     gap_extend=-1, 
-                                                     matrix=matrix)))
-
-            if detect_chimera(perc_identity_matrix) == True:
-                chim_id.append(i)
-
-        if not i in seq:
-            yield [seq[i], occur[i]]
-
 def chimera_removal(amplicon_file, minseqlen, mincount, chunk_size, kmer_size):
 
     list_nonchim = []
