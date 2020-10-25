@@ -109,16 +109,46 @@ def read_fasta(amplicon_file, minseqlen):
                 yield seq
 
 def dereplication_fulllength(amplicon_file, minseqlen, mincount):
+    """
+    sort sequences according their decreasing count (with minimal thresold 
+    being mincount)
+    Parameters
+    ----------
+    amplicon_file : String
+    minseqlen : integer
+    mincount : integer
 
-	seq_list = []
-	for seq in read_fasta(amplicon_file, minseqlen):
-		seq_list.append(seq)
+    Yields : Generator
+    ------
+    """
 
-	for o in Counter(seq_list).most_common():
-		if o[1] > mincount:
-			yield o
+    seq_list = []
+    for seq in read_fasta(amplicon_file, minseqlen):
+        seq_list.append(seq)
+
+    for o in Counter(seq_list).most_common():
+        if o[1] > mincount:
+            yield o
 
 def get_chunks(sequence, ck_size):
+    """
+    Cut a sequence in chunk according a chunk size being at the lowest, 4    
+
+    Parameters
+    ----------
+    sequence : integer
+    ck_size : integer
+
+    Raises
+    ------
+    ValueError
+
+    Returns
+    -------
+    list_chunk : list
+
+    """
+    
     list_chunk = []
     i=1
     l = len(sequence)
@@ -155,12 +185,28 @@ def get_unique(ids):
     return {}.fromkeys(ids).keys()
 
 def get_unique_kmer(kmer_dict, sequence, seq_id, km_size):
-	for seq in cut_kmer(sequence, km_size):
-		if seq not in kmer_dict:
-			kmer_dict[seq] = [seq_id]
-		elif seq_id not in kmer_dict[seq]:
-			kmer_dict[seq].append(seq_id)
-	return kmer_dict
+    """
+    Create a dictionnary containing a kmer and his position in differents 
+    sequences
+
+    Parameters
+    ----------
+    kmer_dict : dict
+    sequence : string
+    seq_id : integer
+    km_size : integer
+
+    Returns
+    -------
+    kmer_dict : dict
+
+    """
+    for seq in cut_kmer(sequence, km_size):
+        if seq not in kmer_dict:
+            kmer_dict[seq] = [seq_id]
+        elif seq_id not in kmer_dict[seq]:
+            kmer_dict[seq].append(seq_id)
+    return kmer_dict
 
 def search_mates(kmer_dict, sequence, km_size):    
 
@@ -170,6 +216,18 @@ def search_mates(kmer_dict, sequence, km_size):
                                    kmer_dict[kmer]]).most_common(8)]
 
 def get_identity(alignement_list):
+    """
+    Calculate the percent of identity between two sequences in an alignment
+
+    Parameters
+    ----------
+    alignement_list : list
+
+    Returns
+    -------
+    float
+
+    """
     nb_base =0
     l = len(alignement_list[0])
     for i in range(0, l):
@@ -178,6 +236,19 @@ def get_identity(alignement_list):
     return nb_base/l * 100
 
 def detect_chimera(perc_identity_matrix):
+    """
+    detect a chimera sequence
+
+    Parameters
+    ----------
+    perc_identity_matrix : matrix 
+        matrix containing percent of identity per segments of sequences
+
+    Returns
+    -------
+    bool
+
+    """
     std_list = []
     bool_s0 = False
     bool_s1 = False
@@ -196,6 +267,21 @@ def detect_chimera(perc_identity_matrix):
 
 
 def chimera_removal(amplicon_file, minseqlen, mincount, chunk_size, kmer_size):
+    """
+    remove chimera sequences
+
+    Parameters
+    ----------
+    amplicon_file : string
+    minseqlen : int
+    mincount : int
+    chunk_size : int
+    kmer_size : int
+
+    Yields
+    ------
+    sequence : str
+    """
 
     list_nonchim = []
     kmer_dict = {}
@@ -237,6 +323,22 @@ def fill(text, width=80):
     return os.linesep.join(text[i:i+width] for i in range(0, len(text), width))
 
 def abundance_greedy_clustering(amplicon_file, minseqlen, mincount, chunk_size, kmer_size):
+    """
+    return operational taxonomic unit (otu)
+
+    Parameters
+    ----------
+    amplicon_file : string
+    minseqlen : int
+    mincount : int
+    chunk_size : int
+    kmer_size : int
+
+    Returns
+    -------
+    otu : list
+
+    """
     otu = []
 
     for seq, number in chimera_removal(amplicon_file, minseqlen, mincount, chunk_size, kmer_size):
@@ -251,7 +353,7 @@ def write_OTU(otu_list, output_file):
     Parameter
     ---------
     otu_list: list
-    output_file: str
+    output_file: path
     """
     with open(output_file, "w") as filout:
         for i, otu in enumerate(otu_list):
