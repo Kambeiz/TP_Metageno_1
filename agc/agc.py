@@ -70,21 +70,46 @@ def get_arguments():
     return parser.parse_args()
 
 def read_fasta(amplicon_file, minseqlen):
+    """
+    open a gz or fasta file and create a generator from that fasta file 
+    according the minimal sequence length chosen
+    Parameters
+    ----------
+    amplicon_file : string
+    minseqlen : integer
     
-    with open(amplicon_file, "r") as fasta:
-        seq = ""
-        for line in fasta:
-            if line.startswith('>'):
-                if len(seq) >= minseqlen:
-                     yield seq
-                seq =""
-
-            else:
-                seq = seq + line[:-1]
-        if len(seq) >= minseqlen:
+    Yields
+    ------
+    generator
+    """
+    if amplicon_file.endswith("gz"): 
+        with gzip.open(amplicon_file, "rb") as gz:
+            seq = b""
+            for line in gz:
+                if line.startswith(b">"):
+                    if len(seq) >= minseqlen:
+                        yield seq.decode('ascii')
+                    seq = b""
+                else:
+                    seq += line.strip()
             yield seq
 
+    elif amplicon_file.endswith("fasta"):
+        with open(amplicon_file, "r") as fasta:
+            seq = ""
+            for line in fasta:
+                if line.startswith('>'):
+                    if len(seq) >= minseqlen:
+                         yield seq
+                    seq =""
+    
+                else:
+                    seq = seq + line[:-1]
+            if len(seq) >= minseqlen:
+                yield seq
+
 def dereplication_fulllength(amplicon_file, minseqlen, mincount):
+
 	seq_list = []
 	for seq in read_fasta(amplicon_file, minseqlen):
 		seq_list.append(seq)
@@ -92,6 +117,211 @@ def dereplication_fulllength(amplicon_file, minseqlen, mincount):
 	for o in Counter(seq_list).most_common():
 		if o[1] > mincount:
 			yield o
+
+def get_chunks(sequence, ck_size):
+    list_chunk = []
+    i=1
+    l = len(sequence)
+    if l < 4*ck_size:
+        raise ValueError("Chunk size should be of 4 at least ")
+    for i in range(1, l):
+        if i*ck_size < l:
+            list_chunk.append(sequence[i*ck_size-ck_size:i*ck_size])
+    #while(i*ck_size < l):
+        #list_chunk.append(sequence[i*ck_size-ck_size:i*ck_size])
+        #i += 1
+    return list_chunk
+
+def cut_kmer(sequence, k_mer):
+    """
+    Take a sequence and cut it according a size given into k_mer.
+    Parameters
+    ----------
+    sequence : Fasta.
+        Nucleotidic sequence.
+    k_mer : Integer
+        Size of the k_mer chosen.
+
+    Returns
+    -------
+    Iterator.
+        Iterator containing all k_mer possible from the sequnece.
+
+    """
+    for i in range(0, len(sequence)-k_mer + 1):
+        yield sequence[i:i+k_mer]
+
+def get_unique(ids):
+    return {}.fromkeys(ids).keys()
+
+def get_unique_kmer(kmer_dict, sequence, seq_id, km_size):
+	for seq in cut_kmer(sequence, km_size):
+		if seq not in kmer_dict:
+			kmer_dict[seq] = [seq_id]
+		elif seq_id not in kmer_dict[seq]:
+			kmer_dict[seq].append(seq_id)
+	return kmer_dict
+
+def search_mates(kmer_dict, sequence, km_size):    
+
+    return [i[0] for i in Counter([ids for kmer in 
+                                   cut_kmer(sequence, km_size) if kmer in
+                                   kmer_dict for ids in 
+                                   kmer_dict[kmer]]).most_common(8)]
+
+def get_identity(alignement_list):
+    nb_base =0
+    l = len(alignement_list[0])
+    for i in range(0, l):
+        if alignement_list[0][i] == alignement_list[1][i]:
+            nb_base += 1
+    return nb_base/l * 100
+
+def detect_chimera(perc_identity_matrix):
+    std_list = []
+    bool_s0 = False
+    bool_s1 = False
+
+    for lis in perc_identity_matrix:
+        std_list.append(statistics.stdev(lis))
+        if lis[0] > lis[1]:
+            bool_s0 = True
+        if lis[0] < lis[1]:
+            bool_s1 = True
+                    
+    if statistics.mean(std_list) > 5 and bool_s0 and bool_s1:
+        return True
+    else:
+        return False
+
+
+
+def chimera_removal(amplicon_file, minseqlen, mincount, chunk_size, kmer_size):
+    """
+    Determine which sequences are chimera or not.
+    Parameter
+    ---------
+    amplicon_file: string
+    minseqlen: integer
+    mincount: integer
+    chunk_size: integer
+    kmer_size: integer
+    Return
+    ------
+    generator of non-chimera sequences
+    """
+    seq = []
+    occur = []
+    best_mates = []
+    parents_seq = []
+    chim_id = []
+    seg = []
+    kmer_dic = {}
+    matrix=os.path.abspath(os.path.join(os.path.dirname(__file__), '../agc')) + "/MATCH"
+    derep_gen = dereplication_fulllength(amplicon_file, minseqlen, mincount)
+    
+    for derep in derep_gen:
+        seq.append(derep[0])
+        occur.append(derep[1])
+        
+
+    for i in range(0, len(seq)):
+        seg.append(get_chunks(seq[i], chunk_size))
+        kmer_dic = get_unique_kmer(kmer_dic, seq[i], i, kmer_size)
+
+    for ck_seq in seg:
+        for ck in ck_seq:
+            best_mates.append(search_mates(kmer_dic, ck, kmer_size))
+
+    parents_seq = common(best_mates[0], best_mates[1])
+    ck_seq_list = [get_chunks(seq[parents_seq[0]], chunk_size), 
+                   get_chunks(seq[parents_seq[1]], chunk_size)]
+    
+    for i in range(len(seq)):
+        if not i in parents_seq:
+            chunk_chim = get_chunks(seq[i], chunk_size)
+
+            perc_identity_matrix = [[] for c in range(len(chunk_chim))]
+            for j in range(0, len(ck_seq_list)):
+                for k,chunk in enumerate(chunk_chim):
+                    perc_identity_matrix[k].append(
+                        get_identity(nw.global_align(chunk, ck_seq_list[j][k], 
+                                                     gap_open=-1, 
+                                                     gap_extend=-1, 
+                                                     matrix=matrix)))
+
+            if detect_chimera(perc_identity_matrix) == True:
+                chim_id.append(i)
+
+        if not i in seq:
+            yield [seq[i], occur[i]]
+
+def chimera_removal(amplicon_file, minseqlen, mincount, chunk_size, kmer_size):
+
+    list_nonchim = []
+    kmer_dict = {}
+    chimera = False
+
+    for i, sequence in enumerate(dereplication_fulllength(amplicon_file, minseqlen, mincount)):
+        
+        chunk_list = get_chunks(sequence[0], chunk_size)
+        
+        mates_list = []
+        for chunk in chunk_list:
+            mates_list.append(search_mates(kmer_dict, chunk, kmer_size))
+
+        common_list = []
+        for i in range(len(mates_list)):
+            common_list = common(common_list, mates_list[i])
+
+
+        if len(common_list) > 1:
+            for c in common_list[0:2]:
+                chunk_ref = get_chunks(list_nonchim[c], chunk_size)
+                
+                identity_matrix = [[]*4]
+                for i in range(len(chunk_list)):
+                    align = nw.global_align(chunk_list[i], chunk_ref[i], gap_open=-1, gap_extend=-1, matrix="MATCH")
+                    identity_matrix[i].append(get_identity(align))
+
+        if not chimera:
+            kmer_dict = get_unique_kmer(kmer_dict, sequence[0], i, kmer_size)
+            list_nonchim.append(sequence[0])
+            yield sequence
+
+
+
+def common(lst1, lst2): 
+    return list(set(lst1) & set(lst2))
+
+def fill(text, width=80):
+    return os.linesep.join(text[i:i+width] for i in range(0, len(text), width))
+
+def abundance_greedy_clustering(amplicon_file, minseqlen, mincount, chunk_size, kmer_size):
+    otu = []
+
+    for seq, number in chimera_removal(amplicon_file, minseqlen, mincount, chunk_size, kmer_size):
+        otu.append((seq, number))
+
+    return otu
+
+
+
+def write_OTU(otu_list, output_file):
+    """
+    Parameter
+    ---------
+    otu_list: list
+    output_file: str
+    Format OTU:
+    >OTU_{numéro partant de 1} occurrence:{nombre d’occurrence à la déréplication}
+    {séquence au format fasta}
+    """
+    with open(output_file, "w") as filout:
+        for i, otu in enumerate(otu_list):
+            filout.write(">OTU_{} occurrence:{}\n".format(i+1, otu[1]))
+            filout.write("{}\n".format(fill(otu[0])))
+
 
 #==============================================================
 # Main program
@@ -102,7 +332,9 @@ def main():
     """
     # Get arguments
     args = get_arguments()
-
+    otu = abundance_greedy_clustering(args.amplicon_file, args.minseqlen,
+                                      args.mincount, args.chunk_size, args.kmer_size)
+    write_OTU(otu, args.output_file)
 
 if __name__ == '__main__':
     main()
